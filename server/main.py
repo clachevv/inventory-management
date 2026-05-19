@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
 from mock_data import inventory_items, orders, demand_forecasts, backlog_items, spending_summary, monthly_spending, category_spending, recent_transactions, purchase_orders
+from datetime import date, timedelta
 
 app = FastAPI(title="Factory Inventory Management System")
 
@@ -119,6 +120,35 @@ class CreatePurchaseOrderRequest(BaseModel):
     unit_cost: float
     expected_delivery_date: str
     notes: Optional[str] = None
+
+# In-memory store for submitted restocking orders (resets on server restart)
+_restocking_orders: list = []
+_restocking_order_counter: list = [0]
+
+# Lead time in days per demand trend — increasing = urgent, decreasing = low priority
+TREND_LEAD_TIME = {"increasing": 3, "stable": 7, "decreasing": 14}
+
+class RestockingOrderItem(BaseModel):
+    sku: str
+    name: str
+    quantity: int
+    unit_cost: float
+    warehouse: str
+    category: str
+    trend: str
+    lead_time_days: int
+    expected_delivery: str
+
+class RestockingOrder(BaseModel):
+    id: str
+    order_number: str
+    items: List[RestockingOrderItem]
+    total_cost: float
+    created_at: str
+    status: str = "Submitted"
+
+class CreateRestockingOrderRequest(BaseModel):
+    items: List[dict]
 
 # API endpoints
 @app.get("/")
@@ -303,6 +333,49 @@ def get_monthly_trends():
     result = list(months.values())
     result.sort(key=lambda x: x['month'])
     return result
+
+@app.get("/api/restocking/orders", response_model=List[RestockingOrder])
+def get_restocking_orders():
+    """Get all submitted restocking orders"""
+    return _restocking_orders
+
+@app.post("/api/restocking/orders", response_model=RestockingOrder, status_code=201)
+def create_restocking_order(request: CreateRestockingOrderRequest):
+    """Submit a restocking order built from demand-forecast recommendations"""
+    if not request.items:
+        raise HTTPException(status_code=400, detail="Order must contain at least one item")
+
+    today = date.today()
+    enriched_items = []
+    for raw in request.items:
+        trend = raw.get("trend", "stable")
+        lead_days = TREND_LEAD_TIME.get(trend, 7)
+        enriched_items.append({
+            "sku": raw["sku"],
+            "name": raw["name"],
+            "quantity": raw["quantity"],
+            "unit_cost": raw["unit_cost"],
+            "warehouse": raw.get("warehouse", ""),
+            "category": raw.get("category", ""),
+            "trend": trend,
+            "lead_time_days": lead_days,
+            # Each item's delivery date is independent so planners can track per-item ETA
+            "expected_delivery": (today + timedelta(days=lead_days)).isoformat(),
+        })
+
+    _restocking_order_counter[0] += 1
+    order_id = f"rst-{_restocking_order_counter[0]:04d}"
+    order = {
+        "id": order_id,
+        "order_number": f"RST-{_restocking_order_counter[0]:04d}",
+        "items": enriched_items,
+        "total_cost": round(sum(i["quantity"] * i["unit_cost"] for i in enriched_items), 2),
+        "created_at": today.isoformat(),
+        "status": "Submitted",
+    }
+    _restocking_orders.append(order)
+    return order
+
 
 if __name__ == "__main__":
     import uvicorn
