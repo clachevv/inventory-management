@@ -5,6 +5,33 @@
       <p>{{ t('orders.description') }}</p>
     </div>
 
+    <div v-if="restockingOrders.length > 0" class="card submitted-orders-card">
+      <div class="card-header">
+        <h3 class="card-title">Submitted Orders</h3>
+      </div>
+      <div class="submitted-orders-list">
+        <div v-for="order in restockingOrders" :key="order.id" class="submitted-order-row">
+          <div class="submitted-order-header">
+            <strong class="order-number-label">{{ order.order_number }}</strong>
+            <span class="badge info">Submitted</span>
+            <span class="submitted-date">{{ formatDate(order.created_at) }}</span>
+            <span class="submitted-cost">${{ order.total_cost.toLocaleString() }}</span>
+          </div>
+          <details class="items-details">
+            <summary class="items-summary">{{ order.items.length }} item{{ order.items.length !== 1 ? 's' : '' }}</summary>
+            <div class="items-dropdown submitted-items-dropdown">
+              <div v-for="item in order.items" :key="item.sku" class="item-entry">
+                <span class="item-name">{{ item.name }}</span>
+                <span class="item-meta">
+                  {{ item.sku }} &middot; Qty: {{ item.quantity }} &middot; ${{ item.unit_cost }} &middot; {{ item.lead_time_days }}-day lead time &middot; Expected: {{ formatDate(item.expected_delivery) }}
+                </span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
@@ -95,6 +122,7 @@ export default {
     const loading = ref(true)
     const error = ref(null)
     const orders = ref([])
+    const restockingOrders = ref([])
 
     // Use shared filters
     const {
@@ -153,7 +181,18 @@ export default {
       })
     }
 
-    onMounted(loadOrders)
+    const loadRestockingOrders = async () => {
+      try {
+        restockingOrders.value = await api.getRestockingOrders()
+      } catch (err) {
+        console.error('Failed to load restocking orders:', err)
+      }
+    }
+
+    onMounted(() => {
+      loadOrders()
+      loadRestockingOrders()
+    })
 
     return {
       t,
@@ -165,13 +204,67 @@ export default {
       formatDate,
       currencySymbol,
       translateProductName,
-      translateCustomerName
+      translateCustomerName,
+      restockingOrders
     }
   }
 }
 </script>
 
 <style scoped>
+/* Submitted restocking orders section */
+.submitted-orders-card {
+  margin-bottom: 1.25rem;
+}
+
+.submitted-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.submitted-order-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.submitted-order-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+.order-number-label {
+  font-size: 0.938rem;
+  color: #0f172a;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.submitted-date {
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.submitted-cost {
+  font-size: 0.938rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-left: auto;
+}
+
+.submitted-items-dropdown {
+  position: static;
+  box-shadow: none;
+  border: none;
+  border-top: 1px solid #f1f5f9;
+  border-radius: 0;
+  max-width: 100%;
+}
+
 /* Fixed table layout to prevent column shifting */
 .orders-table {
   table-layout: fixed;
