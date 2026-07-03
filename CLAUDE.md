@@ -114,3 +114,6 @@ Vue filters → `client/src/api.js` → FastAPI → In-memory JSON filtering →
 - Status: green (delivered), blue (shipped), yellow (processing), red (backordered/low stock)
 - Charts: Custom SVG, CSS Grid for layouts
 - No emojis in UI
+
+## Code Style
+- Always document non-obvious logic changes with comments
